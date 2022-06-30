@@ -1,40 +1,20 @@
 package expression.exceptions;
 
 import base.TestCounter;
-import expression.TripleExpression;
-import expression.Variable;
 import expression.common.Op;
 import expression.common.Reason;
+import expression.parser.ParserTestSet;
 import expression.parser.ParserTester;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.LongBinaryOperator;
 import java.util.function.LongUnaryOperator;
 
 /**
- * @author Niyaz Nigmatullin
  * @author Georgiy Korneev (kgeorgiy@kgeorgiy.info)
  */
 public class ExceptionsTester extends ParserTester {
-    private static final int D = 5;
-    private static final List<Integer> OVERFLOW_VALUES = new ArrayList<>();
-    private final char[] CHARS = "AZ+-*%()[]<>".toCharArray();
-
-    private static final Variable VX = new Variable("x");
-    private static final Variable VY = new Variable("y");
-
-    static {
-        addRange(OVERFLOW_VALUES, D, Integer.MIN_VALUE + D);
-        addRange(OVERFLOW_VALUES, D, Integer.MIN_VALUE / 2);
-        addRange(OVERFLOW_VALUES, D, (int) -Math.sqrt(Integer.MAX_VALUE));
-        addRange(OVERFLOW_VALUES, D, 0);
-        addRange(OVERFLOW_VALUES, D, (int) Math.sqrt(Integer.MAX_VALUE));
-        addRange(OVERFLOW_VALUES, D, Integer.MAX_VALUE / 2);
-        addRange(OVERFLOW_VALUES, D, Integer.MAX_VALUE - D);
-    }
-
-    private final List<Op<String>> parsingTest = list(
+    /* package-private */ final List<Op<String>> parsingTest = list(
             Op.of("No first argument", "* y * z"),
             Op.of("No middle argument", "x *  * z"),
             Op.of("No last argument", "x * y * "),
@@ -56,95 +36,14 @@ public class ExceptionsTester extends ParserTester {
     );
 
     public ExceptionsTester(final TestCounter counter, final int mode) {
-        super(counter, mode, false);
+        super(counter, mode);
     }
+
 
     private void parsingTests(final String... tests) {
         for (final String test : tests) {
             parsingTest.add(Op.of(test, test));
         }
-    }
-
-    private void testParsingErrors() {
-        final ExpressionParser parser = new ExpressionParser();
-        counter.testForEach(parsingTest, op -> {
-            try {
-                parser.parse(op.value);
-                counter.fail("Successfully parsed %s", op.value);
-            } catch (final Exception e) {
-                counter.format("%-30s %s%n", op.name, e.getClass().getSimpleName() + ": " + e.getMessage());
-            }
-        });
-    }
-
-    private void testOverflow() {
-        //noinspection Convert2MethodRef
-        testOverflow((a, b) -> a + b, "+", new CheckedAdd(VX, VY));
-        testOverflow((a, b) -> a - b, "-", new CheckedSubtract(VX, VY));
-        testOverflow((a, b) -> a * b, "*", new CheckedMultiply(VX, VY));
-        testOverflow((a, b) -> b == 0 ? Long.MAX_VALUE : a / b, "/", new CheckedDivide(VX, VY));
-        testOverflow((a, b) -> -b, "<- ignore first argument, unary -", new CheckedNegate(VY));
-    }
-
-    private void testOverflow(final LongBinaryOperator f, final String op, final TripleExpression expression) {
-        for (final int a : OVERFLOW_VALUES) {
-            for (final int b : OVERFLOW_VALUES) {
-                final long expected = f.applyAsLong(a, b);
-                try {
-                    final int actual = expression.evaluate(a, b, 0);
-                    counter.checkTrue(actual == expected, "%d %s %d == %d", a, op, b, actual);
-                } catch (final Exception e) {
-                    if (Integer.MIN_VALUE <= expected && expected <= Integer.MAX_VALUE) {
-                        counter.fail(e, "Unexpected error in %d %s %d", a, op, b);
-                    }
-                }
-            }
-        }
-    }
-
-    @Override
-    protected void test() {
-        counter.scope("Overflow tests", (Runnable) this::testOverflow);
-        super.test();
-        counter.scope("Parsing error tests", this::testParsingErrors);
-    }
-
-    @Override
-    protected TripleExpression parse(final String expression, final boolean reparse) {
-        final Parser parser = new ExpressionParser();
-        final String expr = expression.strip();
-        if (expr.length() > 10) {
-            for (final char ch : CHARS) {
-                for (int i = 0; i < 10; i++) {
-                    final int index = 1 + random.nextInt(expr.length() - 2);
-                    int pi = index - 1;
-                    while (Character.isWhitespace(expr.charAt(pi))) {
-                        pi--;
-                    }
-                    int ni = index;
-                    while (Character.isWhitespace(expr.charAt(ni))) {
-                        ni++;
-                    }
-                    final char pc = expr.charAt(pi);
-                    final char nc = expr.charAt(ni);
-                    if ("-(*".indexOf(nc) < 0 && nc != ch && pc != ch && !Character.isLetterOrDigit(nc)) {
-                        final String input = expr.substring(0, index) + ch + expr.substring(index);
-                        counter.shouldFail(
-                                "Parsing error expected for " + expr.substring(0, index) + "<ERROR_INSERTED -->" + ch + "<-- ERROR_INSERTED>" + expr.substring(index),
-                                () -> parser.parse(input)
-                        );
-                        break;
-                    }
-                }
-            }
-        }
-
-        return counter.testV(() -> counter.call("parse", () -> parser.parse(expr)));
-    }
-
-    @Override
-    protected int cast(final long value) {
-        return Reason.overflow(value);
     }
 
     @Override
@@ -173,5 +72,15 @@ public class ExceptionsTester extends ParserTester {
 
     private static boolean allLetterAndDigit(final String name) {
         return name.chars().allMatch(Character::isLetterOrDigit);
+    }
+
+    @Override
+    protected void test(final ParserTestSet.ParsedKind<?, ?> kind) {
+        new ExceptionsTestSet<>(this, kind).test();
+    }
+
+    @Override
+    protected int cast(final long value) {
+        return Reason.overflow(value);
     }
 }

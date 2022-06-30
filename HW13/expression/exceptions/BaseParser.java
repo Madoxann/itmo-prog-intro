@@ -1,14 +1,26 @@
 package expression.exceptions;
 
+import java.util.Set;
+
 public class BaseParser {
     public static final char END = '\0';
     public final CharSource source;
 
-    protected char ch = 0xffff;
+    protected Set<Character> startingSymbols = null;
+
+    private char ch = 0xffff;
 
     protected BaseParser(final CharSource source) {
         this.source = source;
         take();
+    }
+
+    public boolean isWS() {
+        return Character.isWhitespace(ch) || ch == '\r' || ch == '\n' || ch == '\t';
+    }
+
+    public boolean isAcceptable() {
+        return startingSymbols == null || startingSymbols.contains(ch);
     }
 
     protected char take() {
@@ -18,18 +30,9 @@ public class BaseParser {
     }
 
     public void skipWS() {
-        while (Character.isWhitespace(ch) || ch == '\r' || ch == '\n' || ch == '\t') {
+        while (isWS()) {
             ch = source.hasNext() ? source.next() : END;
         }
-    }
-
-    public boolean isOpeningBr() {
-        return ch == '(';
-    }
-
-    public boolean isAcceptable() {
-        return (ch == 'x' || ch == 'y' || ch == 'z' || ch == '(' || between('0', '9') || ch == '-'
-                || ch == '+' || ch == '*' || ch == '/' || ch == 'l' || ch == 't' || ch == 'm');
     }
 
     protected boolean test(final char expected) {
@@ -44,13 +47,13 @@ public class BaseParser {
         return false;
     }
 
-    protected void expect(final char expected) {
+    protected void expect(final char expected) throws UnexpectedSymbolException {
         if (!take(expected)) {
-            throw error("Expected '" + expected + "', found '" + ch + "'");
+            throw new UnexpectedSymbolException(source.getErrorMsg());
         }
     }
 
-    protected void expect(final String value) {
+    protected void expect(final String value) throws UnexpectedSymbolException {
         for (final char c : value.toCharArray()) {
             expect(c);
         }

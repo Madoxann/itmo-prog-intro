@@ -2,10 +2,12 @@ package expression;
 
 import base.Asserts;
 import base.ExtendedRandom;
+import base.Pair;
 import base.TestCounter;
+import expression.common.ExpressionKind;
+import expression.common.Type;
 
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
+import java.util.List;
 
 /**
  * One-argument arithmetic expression over integers.
@@ -15,13 +17,21 @@ import java.util.stream.IntStream;
 @FunctionalInterface
 @SuppressWarnings("ClassReferencesSubclass")
 public interface Expression extends ToMiniString {
+    Type<Integer> TYPE = new Type<>(a -> a, ExtendedRandom::nextInt, int.class);
+    ExpressionKind<Expression, Integer> KIND = new ExpressionKind<>(
+            TYPE,
+            Expression.class,
+            List.of(Pair.of("x", new Variable("x"))),
+            (expr, variables, values) -> expr.evaluate(values.get(0))
+    );
+
     int evaluate(int x);
 
     private static Const c(final int c) {
         return new Const(c);
     }
 
-    static ExpressionTester<?, ?, ?> tester(final TestCounter counter, final int mode) {
+    static ExpressionTester<?, ?> tester(final TestCounter counter, final int mode) {
         final Subtract example = new Subtract(
                 new Multiply(new Const(2), new Variable("x")),
                 new Const(3)
@@ -41,17 +51,9 @@ public interface Expression extends ToMiniString {
 
         //noinspection Convert2MethodRef
         return new ExpressionTester<>(
-                counter,
-                mode,
-                Expression.class,
-                Expression::evaluate,
-                IntStream.rangeClosed(0, 10).boxed().collect(Collectors.toList()),
-                ExtendedRandom::nextInt,
-                ExtendedRandom::nextInt,
-                c -> x -> c, int.class,
+                counter, mode, KIND, c -> x -> c,
                 (op, a, b) -> x -> op.apply(a.evaluate(x), b.evaluate(x)),
-                (a, b) -> a + b, (a, b) -> a - b, (a, b) -> a * b, (a, b) -> a / b,
-                ExpressionTester.variable("x", x -> x)
+                (a, b) -> a + b, (a, b) -> a - b, (a, b) -> a * b, (a, b) -> a / b
         )
                 .basic("10", "10", x -> 10, c(10))
                 .basic("x", "x", x -> x, vx)

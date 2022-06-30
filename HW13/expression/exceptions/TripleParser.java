@@ -6,6 +6,6 @@ import expression.TripleExpression;
  * @author Georgiy Korneev (kgeorgiy@kgeorgiy.info)
  */
 @FunctionalInterface
-public interface Parser {
-    TripleExpression parse(String expression) throws /* Change me */ Exception;
+public interface TripleParser {
+    TripleExpression parse(String expression) throws Exception;
 }

@@ -108,7 +108,7 @@ public class ExpressionParser implements Parser {
             final StringBuilder sb = new StringBuilder();
             takeInteger(sb);
             try {
-                return new Const((Integer.parseInt(Math.pow(-1, multiplier) < 0 ? "-" + sb.toString() : sb.toString())));
+                return new Const((Integer.parseInt(Math.pow(-1, multiplier) < 0 ? "-" + sb : sb.toString())));
             } catch (final NumberFormatException e) {
                 throw error("Invalid number " + sb);
             }

@@ -3,132 +3,148 @@ package expression.exceptions;
 import expression.UniteExpression;
 import expression.TripleExpression;
 
-public class ExpressionParser implements Parser {
-    public ExpressionParser() {
-        //lmao why the constructor?
-    }
+import java.util.Arrays;
+import java.util.HashSet;
 
+public class ExpressionParser implements TripleParser {
     @Override
     public TripleExpression parse(String expression) throws ParsingException {
-        return new TripleParser(new StringSource(expression)).parseExpression();
+        return new TripleParser(new StringSource(expression)).parseExpression(BaseParser.END);
     }
 
     private static class TripleParser extends BaseParser {
-        protected TripleParser(CharSource source) {
-            super(source);
+        private boolean isMissingWS() {
+            return !isWS() && !test('(');
         }
 
-        //) - closing bracket
-        //F - first priority
-        //S - second
-        //T - third
+        protected TripleParser(CharSource source) {
+            super(source);
+            startingSymbols = new HashSet<>(Arrays.asList('x', 'y', 'z', '(', '0', '1', '2', '3', '4', '5',
+                    '6', '7', '8', '9', '-', '+', '*', '/', 'l', 't', 'm'));
+        }
 
-        TripleExpression parseExpression(char ch) throws ParsingException {
+        private TripleExpression parseFirst() throws ParsingException {
             TripleExpression currExpr = null;
-            while (!take(ch)) {
-                skipWS();
-                if (!isAcceptable() && !test(')') ||
-                        test(')') && ch == BaseParser.END) {
-                    if (this.ch == '\u0000') {
-                        throw new MissingSecondArgumentException();
-                    }
-                    throw new UnexpectedSymbolException(source.getErrorMsg());
+            skipWS();
+            if (take('(')) {
+                currExpr = parseParenthesis();
+            }
+            if (between('0', '9')) {
+                if (currExpr != null) {
+                    throw new MissingOperatorException();
                 }
-
-                if (take('(')) {
-                    currExpr = parseExpression(')');
+                currExpr = parseConst(0);
+            }
+            if (between('x', 'z')) {
+                if (currExpr != null) {
+                    throw new MissingOperatorException();
                 }
-
-                if (between('0', '9')) {
-                    if (currExpr != null) {
-                        throw new MissingOperatorException();
-                    }
-                    currExpr = parseConst(0);
+                currExpr = parseVar(0);
+            }
+            if (currExpr == null) {
+                if (take('-')) {
+                    currExpr = parseMinus();
                 }
-                if (between('x', 'z')) {
-                    if (currExpr != null) {
-                        throw new MissingOperatorException();
+                if (take('l')) {
+                    expect('0');
+                    if (isMissingWS()) {
+                        throw new WhitespaceException(source.getErrorMsg());
                     }
-                    currExpr = parseVar(0);
+                    currExpr = parseLTZero("l0");
                 }
-                if (currExpr == null) {
-                    if (take('-')) {
-                        currExpr = parseMinus();
+                if (take('t')) {
+                    expect('0');
+                    if (isMissingWS()) {
+                        throw new WhitespaceException(source.getErrorMsg());
                     }
-                    if (take('l')) {
-                        expect('0');
-                        if (!(Character.isWhitespace(this.ch) || (isOpeningBr()))) {
-                            throw new WhitespaceException(source.getErrorMsg());
-                        }
-                        currExpr = parseLZero();
-                    }
-                    if (take('t')) {
-                        expect('0');
-                        if (!(Character.isWhitespace(this.ch) || (isOpeningBr()))) {
-                            throw new WhitespaceException(source.getErrorMsg());
-                        }
-                        currExpr = parseTZero();
-                    }
-                }
-
-                if (ch == 'F') {
-                    if (currExpr == null){
-                        throw new MissingUnaryArgumentException();
-                    }
-                    return currExpr;
-                }
-                if (ch == 'S' || ch == BaseParser.END || ch == ')') {
-                    if (currExpr == null) {
-                        throw new MissingFirstArgumentException();
-                    }
-                    if (take('*')) {
-                        currExpr = parseMultiply(currExpr);
-                    }
-                    if (take('/')) {
-                        currExpr = parseDivide(currExpr);
-                    }
-                }
-
-                if ((test('+') || test('-') || test(END) || test(')') || test('m') ) && ch == 'S') {
-                    return currExpr;
-                }
-
-                //if ((test('+') || test('-') || test(END) || test(')') || test('m') )) {
-                  //  return currExpr;
-                //}
-
-                if (ch == BaseParser.END || ch == ')') {
-                    if (currExpr == null) {
-                        //Mb first arg
-                        throw new ParsingException("Binary operator as unary");
-                    }
-                    if (take('+')) {
-                        currExpr = parseAdd(currExpr);
-                    }
-                    if (take('-')) {
-                        currExpr = parseSubtraction(currExpr);
-                    }
-                    if (take('m')) {
-                        if (take('i')) {
-                            expect('n');
-                            currExpr = parseMin(currExpr);
-                        } else {
-                            expect("ax");
-                            currExpr = parseMax(currExpr);
-                        }
-                    }
-                }
-
-                if (currExpr != null && ch != BaseParser.END && ch != ')' && ch != 'S') {
-                    return currExpr;
+                    currExpr = parseLTZero("t0");
                 }
             }
-            if (currExpr == null) throw new MissingBracketExpressionException();
+
             return currExpr;
         }
 
-        private TripleExpression parseExpression() throws ParsingException {
-            return parseExpression(BaseParser.END);
+        private TripleExpression parseSecond(TripleExpression currExpr) throws ParsingException {
+            while (true) {
+                skipWS();
+                if (take('(')) {
+                    currExpr = parseParenthesis();
+                    continue;
+                }
+                if (currExpr == null) {
+                    currExpr = parseFirst();
+                    if (currExpr == null) return null;
+                    continue;
+                }
+                if (take('*')) {
+                    currExpr = parseASMD(currExpr, '*');
+                    continue;
+                }
+                if (take('/')) {
+                    currExpr = parseASMD(currExpr, '/');
+                    continue;
+                }
+                return currExpr;
+            }
+        }
+
+        private TripleExpression parseThird(TripleExpression currExpr) throws ParsingException {
+            while (true) {
+                skipWS();
+                if (take('(')) {
+                    currExpr = parseParenthesis();
+                    continue;
+                }
+                if (currExpr == null) {
+                    currExpr = parseFirst();
+                    if (currExpr == null) return null;
+                    continue;
+                }
+                if (take('+')) {
+                    currExpr = parseASMD(currExpr, '+');
+                    continue;
+                }
+                if (take('-')) {
+                    currExpr = parseASMD(currExpr, '-');
+                    continue;
+                }
+                if (take('m')) {
+                    if (take('i')) {
+                        expect('n');
+                        currExpr = parseMinMax(currExpr, "min");
+                    } else {
+                        expect("ax");
+                        currExpr = parseMinMax(currExpr, "max");
+                    }
+                    continue;
+                }
+
+                return currExpr;
+            }
+        }
+
+        private TripleExpression parseParenthesis() throws ParsingException {
+            TripleExpression ret;
+            ret = parseExpression(')');
+            if (ret == null) throw new MissingBracketExpressionException();
+            return ret;
+        }
+
+        public TripleExpression parseExpression(final char end) throws ParsingException {
+            skipWS();
+            if (!isAcceptable() && !test(')')) {
+                if (eof()) {
+                    throw new MissingSecondArgumentException();
+                }
+                throw new UnexpectedSymbolException(source.getErrorMsg());
+            }
+            TripleExpression expression;
+            expression = parseFirst();
+            expression = parseSecond(expression);
+            expression = parseThird(expression);
+            expect(end);
+
+            return expression;
         }
 
         private TripleExpression parseConst(int multiplier) {
@@ -143,7 +159,7 @@ public class ExpressionParser implements Parser {
             }
         }
 
-        private TripleExpression parseVar(int multiplier) throws ParsingException {
+        private TripleExpression parseVar(int multiplier) throws UnexpectedVariableException {
             skipWS();
             char varName = take();
             if (varName == 'x' || varName == 'y' || varName == 'z') {
@@ -164,69 +180,69 @@ public class ExpressionParser implements Parser {
             if (between('x', 'z')) {
                 return parseVar(multiplier);
             }
-            return new CheckedNegate((UniteExpression) parseExpression('F'));
+
+            UniteExpression getExpression = (UniteExpression) parseFirst();
+            if (getExpression == null) throw new MissingFirstArgumentException();
+
+            return new CheckedNegate(getExpression);
         }
 
-        private TripleExpression parseLZero() throws ParsingException{
+        private TripleExpression parseLTZero(String taken) throws ParsingException {
             skipWS();
             if (take('-')) {
-                return new CheckedLZero((UniteExpression) parseMinus());
-            }
-            return new CheckedLZero((UniteExpression) parseExpression('F'));
-        }
-
-        private TripleExpression parseTZero() throws ParsingException {
-            skipWS();
-            if (take('-')) {
+                if (taken.equals("l0")) return new CheckedLZero((UniteExpression) parseMinus());
                 return new CheckedTZero((UniteExpression) parseMinus());
             }
-            return new CheckedTZero((UniteExpression) parseExpression('F'));
+
+            UniteExpression getExpression = (UniteExpression) parseFirst();
+            if (getExpression == null) throw new MissingFirstArgumentException();
+
+            if (taken.equals("l0")) return new CheckedLZero(getExpression);
+            return new CheckedTZero(getExpression);
         }
 
-        private TripleExpression parseAdd(TripleExpression expression) throws ParsingException {
+        private TripleExpression parseASMD(TripleExpression expression, char taken) throws ParsingException {
+            if (expression == null) throw new MissingFirstArgumentException();
             skipWS();
-            TripleExpression getExpression = parseExpression('S');
-            return new CheckedAdd((UniteExpression) expression, (UniteExpression) getExpression);
-
+            UniteExpression getExpression;
+            if (taken == '+' || taken == '-') {
+                getExpression = (UniteExpression) parseSecond(null);
+            } else {
+                getExpression = (UniteExpression) parseFirst();
+            }
+            if (getExpression == null) throw new MissingSecondArgumentException();
+            switch (taken) {
+                case '+':
+                    return new CheckedAdd((UniteExpression) expression, getExpression);
+                case '-':
+                    return new CheckedSubtract((UniteExpression) expression, getExpression);
+                case '*':
+                    return new CheckedMultiply((UniteExpression) expression, getExpression);
+                case '/':
+                    return new CheckedDivide((UniteExpression) expression, getExpression);
+            }
+            throw new MissingOperatorException();
         }
 
-        private TripleExpression parseSubtraction(TripleExpression expression) throws ParsingException{
-            skipWS();
-            TripleExpression getExpression = parseExpression('S');
-            return new CheckedSubtract((UniteExpression) expression, (UniteExpression) getExpression);
-        }
-
-        private TripleExpression parseMultiply(TripleExpression expression) throws ParsingException{
-            skipWS();
-            TripleExpression getExpression = parseExpression('F');
-            return new CheckedMultiply((UniteExpression) expression, (UniteExpression) getExpression);
-        }
-
-        private TripleExpression parseDivide(TripleExpression expression) throws ParsingException{
-            skipWS();
-            TripleExpression getExpression = parseExpression('F');
-            return new CheckedDivide((UniteExpression) expression, (UniteExpression) getExpression);
-        }
-
-        private TripleExpression parseMin(TripleExpression expression) throws ParsingException {
-            if (!(Character.isWhitespace(this.ch) || isOpeningBr() || this.ch == '-')) {
+        private TripleExpression parseMinMax(TripleExpression expression, String taken) throws ParsingException {
+            if (expression == null) throw new MissingFirstArgumentException();
+            if (isMissingWS() && !test('-')) {
                 throw new WhitespaceException(source.getErrorMsg());
             }
             skipWS();
-            TripleExpression getExpression = parseExpression('S');
-            return new CheckedMin((UniteExpression) expression, (UniteExpression) getExpression);
-        }
-
-        private TripleExpression parseMax(TripleExpression expression) throws ParsingException {
-            if (!(Character.isWhitespace(this.ch) || isOpeningBr() || this.ch == '-')) {
-                throw new WhitespaceException(source.getErrorMsg());
+            UniteExpression getExpression = (UniteExpression) parseSecond(null);
+            if (getExpression == null) throw new MissingSecondArgumentException();
+            switch (taken) {
+                case "min" :
+                    return new CheckedMin((UniteExpression) expression, getExpression);
+                case "max":
+                    return new CheckedMax((UniteExpression) expression, getExpression);
             }
-            skipWS();
-            TripleExpression getExpression = parseExpression('S');
-            return new CheckedMax((UniteExpression) expression, (UniteExpression) getExpression);
+            throw new MissingOperatorException();
         }
 
         private void takeDigits(final StringBuilder sb) {
+            skipWS();
             while (between('0', '9')) {
                 sb.append(take());
             }
@@ -239,8 +255,9 @@ public class ExpressionParser implements Parser {
             } else if (between('1', '9')) {
                 takeDigits(sb);
             } else {
-                throw new InvalidNumberException(sb.toString() + take());
+                throw error("Invalid number");
             }
         }
+
     }
 }

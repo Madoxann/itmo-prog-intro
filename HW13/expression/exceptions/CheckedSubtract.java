@@ -1,9 +1,8 @@
 package expression.exceptions;
 
-import java.math.BigInteger;
 import expression.UniteExpression;
 
-public class CheckedSubtract  extends BinaryOperation {
+public class CheckedSubtract extends BinaryOperation {
     public CheckedSubtract(UniteExpression lTerm, UniteExpression rTerm) {
         super(lTerm, rTerm);
     }
@@ -12,7 +11,8 @@ public class CheckedSubtract  extends BinaryOperation {
     public int evaluate(int x, int y, int z) {
         int leftCalc = leftTerm.evaluate(x, y ,z);
         int rightCalc = rightTerm.evaluate(x, y, z);
-        if ((new BigInteger(String.valueOf(leftCalc)).subtract(new BigInteger(String.valueOf(rightCalc)))).compareTo(new BigInteger(String.valueOf(leftCalc-rightCalc))) != 0) {
+        if ((leftCalc >= 0 && rightCalc < 0 && leftCalc - Integer.MAX_VALUE > rightCalc) ||
+                (leftCalc <= 0 && rightCalc > 0 && Integer.MIN_VALUE - leftCalc > -rightCalc)) {
             throw new OverflowException();
         }
         return leftCalc - rightCalc;

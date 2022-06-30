@@ -1,23 +1,19 @@
 package expression;
 
-import base.Asserts;
-import base.ExtendedRandom;
-import base.Pair;
-import base.TestCounter;
+import base.*;
 import expression.common.*;
 
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
-import java.util.function.BiFunction;
 import java.util.function.BinaryOperator;
 import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import static base.Asserts.assertEquals;
 import static base.Asserts.assertTrue;
@@ -25,11 +21,9 @@ import static base.Asserts.assertTrue;
 /**
  * @author Georgiy Korneev (kgeorgiy@kgeorgiy.info)
  */
-public class ExpressionTester<E extends ToMiniString, V, C> extends BaseTester {
-    private final Class<E> type;
-    private final BiFunction<E, V, Object> evaluate;
-    private final List<V> values;
-    private final Function<ExtendedRandom, V> randomVars;
+public class ExpressionTester<E extends ToMiniString, C> extends BaseTester {
+    private final List<Integer> VALUES = IntStream.rangeClosed(-10, 10).boxed().collect(Collectors.toUnmodifiableList());
+    private final ExpressionKind<E, C> kind;
 
     private final List<Test> basic = new ArrayList<>();
     private final List<Test> advanced = new ArrayList<>();
@@ -37,43 +31,30 @@ public class ExpressionTester<E extends ToMiniString, V, C> extends BaseTester {
 
     private final List<Pair<ToMiniString, String>> prev = new ArrayList<>();
 
-    @SafeVarargs
     protected ExpressionTester(
             final TestCounter counter,
             final int mode,
-            final Class<E> expressionType,
-            final BiFunction<E, V, Object> evaluate,
-            final List<V> values,
-            final Function<ExtendedRandom, C> randomValue,
-            final Function<ExtendedRandom, V> randomVars,
+            final ExpressionKind<E, C> kind,
             final Function<C, E> expectedConstant,
-            final Class<?> constType,
             final Binary<C, E> binary,
             final BinaryOperator<C> add,
             final BinaryOperator<C> sub,
             final BinaryOperator<C> mul,
-            final BinaryOperator<C> div,
-            final Op<E>... vars
+            final BinaryOperator<C> div
     ) {
         super(counter, mode);
-        type = expressionType;
-        this.evaluate = evaluate;
-        this.values = values;
-        this.randomVars = randomVars;
+        this.kind = kind;
 
-        generator = new Generator(expectedConstant, constant(constType).andThen(expressionType::cast), binary, randomValue);
-        for (final Op<E> var : vars) {
-            generator.variable(var);
-        }
-        generator.binary("+",  200, add, Add.class);
-        generator.binary("-", -200, sub, Subtract.class);
-        generator.binary("*",  301, mul, Multiply.class);
-        generator.binary("/", -300, div, Divide.class);
+        generator = new Generator(expectedConstant, kind::constant, binary, kind::randomValue);
+        generator.binary("+",  1600, add, Add.class);
+        generator.binary("-", 1602, sub, Subtract.class);
+        generator.binary("*",  2001, mul, Multiply.class);
+        generator.binary("/", 2002, div, Divide.class);
     }
 
     @Override
     public String toString() {
-        return type.getSimpleName();
+        return kind.getName();
     }
 
     @Override
@@ -113,55 +94,60 @@ public class ExpressionTester<E extends ToMiniString, V, C> extends BaseTester {
         counter.test(() -> assertTrue(String.format("Invalid %s\n     expected: %s\n       actual: %s", method, expected, actual), expected.equals(actual)));
     }
 
-    private void check(final String full, final E expected, final E actual, final V v) {
-        counter.test(() -> assertEquals(String.format("f(%s)\n%s", v, full), evaluate(expected, v), evaluate(actual, v)));
+    private void check(
+            final String full,
+            final E expected,
+            final E actual,
+            final List<String> variables,
+            final List<C> values
+    ) {
+        final String vars = IntStream.range(0, variables.size())
+                .mapToObj(i -> variables.get(i) + "=" + values.get(i))
+                .collect(Collectors.joining(","));
+        counter.test(() -> assertEquals(
+                String.format("f(%s)\nwhere f is %s", vars, full),
+                evaluate(expected, variables, values),
+                evaluate(actual, variables, values)
+        ));
     }
 
-    private Object evaluate(final E expression, final V value) {
+    private Object evaluate(final E expression, final List<String> variables, final List<C> values) {
         try {
-            return evaluate.apply(expression, value);
+            return kind.evaluate(expression, variables, values);
         } catch (final Exception e) {
             return e.getClass().getName();
         }
     }
 
-    protected ExpressionTester<E, V, C> basic(final String full, final String mini, final E expected, final Object actual) {
-        return basic(new Test(full, mini, expected, type.cast(actual)));
+    protected ExpressionTester<E, C> basic(final String full, final String mini, final E expected, final E actual) {
+        return basicF(full, mini, expected, vars -> actual);
     }
 
-    private ExpressionTester<E, V, C> basic(final Test test) {
+    protected ExpressionTester<E, C> basicF(final String full, final String mini, final E expected, final Function<List<String>, E> actual) {
+        return basic(new Test(full, mini, expected, actual));
+    }
+
+    private ExpressionTester<E, C> basic(final Test test) {
         basic.add(test);
         return this;
     }
 
-    public ExpressionTester<E, V, C> basic(final Node<C> node, final Object expression) {
-        return basic(generator.test(node, type.cast(expression)));
+    public ExpressionTester<E, C> basic(final Node<C> node, final E expression) {
+        final List<Pair<String, E>> variables = kind.variables.generate(random, 3);
+        return basic(generator.test(new Expr<>(node, variables), kind.cast(expression)));
     }
 
-    protected ExpressionTester<E, V, C> advanced(final String full, final String mini, final E expected, final Object actual) {
-        advanced.add(new Test(full, mini, expected, type.cast(actual)));
+    protected ExpressionTester<E, C> advanced(final String full, final String mini, final E expected, final E actual) {
+        return advancedF(full, mini, expected, vars -> actual);
+    }
+
+    protected ExpressionTester<E, C> advancedF(final String full, final String mini, final E expected, final Function<List<String>, E> actual) {
+        advanced.add(new Test(full, mini, expected, actual));
         return this;
     }
 
     protected static <E> Op<E> variable(final String name, final E expected) {
         return Op.of(name, expected);
-    }
-
-    public static Function<Object, Const> constant(final Class<?> type) {
-        try {
-            final MethodHandle constructor = MethodHandles.publicLookup().findConstructor(Const.class, MethodType.methodType(void.class, type));
-            return t -> {
-                try {
-                    return (Const) constructor.invoke(t);
-                } catch (final Throwable e) {
-                    throw Asserts.error("Cannot create new Const(%s): %s", t, e);
-                }
-            };
-        } catch (final IllegalAccessException | NoSuchMethodException e) {
-            return t -> {
-                throw Asserts.error("Cannot find constructor Const(%s): %s", type, e);
-            };
-        }
     }
 
     @FunctionalInterface
@@ -173,9 +159,9 @@ public class ExpressionTester<E extends ToMiniString, V, C> extends BaseTester {
         private final String full;
         private final String mini;
         private final E expected;
-        private final E actual;
+        private final Function<List<String>, E> actual;
 
-        private Test(final String full, final String mini, final E expected, final E actual) {
+        private Test(final String full, final String mini, final E expected, final Function<List<String>, E> actual) {
             this.full = full;
             this.mini = mini;
             this.expected = expected;
@@ -183,23 +169,33 @@ public class ExpressionTester<E extends ToMiniString, V, C> extends BaseTester {
         }
 
         private void test() {
-            counter.scope(mini, () -> {
-                for (final V value : values) {
-                    check(mini, expected, actual, value);
-                }
+            final List<Pair<String, E>> variables = kind.variables.generate(random, 3);
+            final List<String> names = Functional.map(variables, Pair::first);
+            final E actual = kind.cast(this.actual.apply(names));
+            final String full = mangle(this.full, names);
+            final String mini = mangle(this.mini, names);
+
+            counter.test(() -> {
+                kind.allValues(variables.size(), VALUES).forEach(values -> check(mini, expected, actual, names, values));
                 checkEqualsAndToString(full, mini, actual, actual);
                 prev.add(Pair.of(actual, full));
             });
+        }
+
+        private String mangle(String string, final List<String> names) {
+            for (int i = 0; i < names.size(); i++) {
+                string = string.replace("$" + (char) ('x' + i), names.get(i));
+            }
+            return string;
         }
     }
 
     private final class Generator {
         private final expression.common.Generator<C> generator;
-        private final FullRenderer<C> full = new FullRenderer<>();
-        private final MiniRenderer<C> mini = new MiniRenderer<>(false);
-        private final Renderer<C, E> expected;
-        private final Renderer<C, E> actual;
-        private final Renderer<C, E> copy;
+        private final NodeRenderer<C> renderer = new NodeRenderer<>(random);
+        private final Renderer<C, Unit, E> expected;
+        private final Renderer<C, Unit, E> actual;
+        private final Renderer<C, Unit, E> copy;
         private final Binary<C, E> binary;
 
         private Generator(
@@ -209,38 +205,25 @@ public class ExpressionTester<E extends ToMiniString, V, C> extends BaseTester {
                 final Function<ExtendedRandom, C> randomValue
         ) {
             generator = new expression.common.Generator<>(random, () -> randomValue.apply(random));
-            expected = new Renderer<>(expectedConstant);
-            actual = new Renderer<>(actualConstant);
-            copy = new Renderer<>(actualConstant);
+            expected = new Renderer<>(expectedConstant::apply);
+            actual = new Renderer<>(actualConstant::apply);
+            copy = new Renderer<>(actualConstant::apply);
 
             this.binary = binary;
         }
 
-        @SuppressWarnings("unchecked")
-        private void variable(final Op<E> variable) {
-            final String name = variable.name;
-            generator.add(name, 0);
-            full.nullary(name);
-            mini.nullary(name);
-
-            expected.nullary(name, variable.value);
-            actual.nullary(name, (E) new Variable(name));
-            copy.nullary(name, (E) new Variable(name));
-        }
-
         private void binary(final String name, final int priority, final BinaryOperator<C> op, final Class<?> type) {
             generator.add(name, 2);
-            full.binary(name);
-            mini.binary(name,  priority);
+            renderer.binary(name, priority);
 
-            expected.binary(name, (a, b) -> binary.apply(op, a, b));
+            expected.binary(name, (unit, a, b) -> binary.apply(op, a, b));
 
             @SuppressWarnings("unchecked") final Constructor<? extends E> constructor = (Constructor<? extends E>) Arrays.stream(type.getConstructors())
                     .filter(cons -> Modifier.isPublic(cons.getModifiers()))
                     .filter(cons -> cons.getParameterCount() == 2)
                     .findFirst()
                     .orElseGet(() -> counter.fail("%s(..., ...) constructor not found", type.getSimpleName()));
-            final BinaryOperator<E> actual = (a, b) -> {
+            final Renderer.BinaryOperator<Unit, E> actual = (unit, a, b) -> {
                 try {
                     return constructor.newInstance(a, b);
                 } catch (final Exception e) {
@@ -252,19 +235,30 @@ public class ExpressionTester<E extends ToMiniString, V, C> extends BaseTester {
         }
 
         private void testRandom() {
-            generator.testRandom(1, counter, test -> {
-                final String full = this.full.render(test);
-                final String mini = this.mini.render(test);
-                final E expected = this.expected.render(test);
-                final E actual = this.actual.render(test);
+            generator.testRandom(1, counter, kind.variables, expr -> {
+                final String full = renderer.render(expr, NodeRenderer.FULL);
+                final String mini = renderer.render(expr, NodeRenderer.MINI);
+                final E expected = this.expected.render(Unit.INSTANCE, expr);
+                final E actual = this.actual.render(Unit.INSTANCE, expr);
 
-                checkEqualsAndToString(full, mini, actual, copy.render(test));
-                check(full, expected, actual, randomVars.apply(random));
+                final List<Pair<String, E>> variables = kind.variables.generate(random, random.nextInt(5) + 1);
+                final List<String> names = Functional.map(variables, Pair::first);
+                final List<C> values = Stream.generate(() -> kind.randomValue(random))
+                        .limit(variables.size())
+                        .collect(Collectors.toUnmodifiableList());
+
+                checkEqualsAndToString(full, mini, actual, copy.render(Unit.INSTANCE, expr));
+                check(full, expected, actual, names, values);
             });
         }
 
-        public Test test(final Node<C> node, final E expression) {
-            return new Test(full.render(node), mini.render(node), expected.render(node), expression);
+        public Test test(final Expr<C, E> expr, final E expression) {
+            return new Test(
+                    renderer.render(expr, NodeRenderer.FULL),
+                    renderer.render(expr, NodeRenderer.MINI),
+                    expected.render(Unit.INSTANCE, expr),
+                    vars -> expression
+            );
         }
     }
 }

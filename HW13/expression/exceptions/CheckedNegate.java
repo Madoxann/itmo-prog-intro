@@ -18,7 +18,7 @@ public class CheckedNegate extends UnaryOperation{
         if (calc == Integer.MIN_VALUE) {
             throw new OverflowException();
         }
-        return -1 * calc;
+        return -calc;
     }
 
     @Override

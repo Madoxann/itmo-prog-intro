@@ -1,6 +1,5 @@
 package expression.exceptions;
 
-import java.math.BigInteger;
 import expression.UniteExpression;
 
 public class CheckedMultiply extends BinaryOperation{
@@ -12,9 +11,12 @@ public class CheckedMultiply extends BinaryOperation{
     public int evaluate(int x, int y, int z) {
         int leftCalc = leftTerm.evaluate(x, y ,z);
         int rightCalc = rightTerm.evaluate(x, y, z);
-        if ((new BigInteger(String.valueOf(leftCalc)).multiply(new BigInteger(String.valueOf(rightCalc)))).compareTo(new BigInteger(String.valueOf(leftCalc*rightCalc))) != 0) {
-            throw new OverflowException();
-        }
+        // conditions MUST be in this order, otherwise speculative execution will fail tests
+        if (rightCalc > 0 && leftCalc > 0 && Integer.MAX_VALUE / leftCalc < rightCalc) throw new OverflowException();
+        if (rightCalc < 0 && leftCalc < 0 && Integer.MAX_VALUE / leftCalc > rightCalc) throw new OverflowException();
+        if (rightCalc > 0 && leftCalc < 0 && Integer.MIN_VALUE / rightCalc > leftCalc) throw new OverflowException();
+        if (rightCalc < 0 && leftCalc > 0 && Integer.MIN_VALUE / leftCalc > rightCalc) throw new OverflowException();
+
         return leftCalc * rightCalc;
     }
 

@@ -2,7 +2,7 @@
 
 [Условия домашних заданий](https://www.kgeorgiy.info/courses/prog-intro/homeworks.html)
 
-## Домашнее задание 13. Обработка ошибок
+## Домашнее задание 13. Обработка ошибок (expression/exceptions)
 
 Модификации
  * *Base*
